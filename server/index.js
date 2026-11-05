@@ -1089,8 +1089,8 @@ export function createApp({
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const app = createApp()
-  const port = Number(process.env.API_PORT || 3001)
+  const port = Number(process.env.PORT || process.env.API_PORT || 3001)
   app.listen(port, () => {
-    console.log(`API Soberano disponível em http://localhost:${port}`)
+    console.log(`API Soberano disponível na porta ${port}`)
   })
 }
