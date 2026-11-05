@@ -1557,6 +1557,7 @@ textarea {
 @media (max-width: 980px) {
   .app-shell {
     flex-direction: column;
+    overflow-x: clip;
   }
 
   .sidebar {
@@ -1605,6 +1606,7 @@ textarea {
     margin-top: 0;
     padding-top: 8px;
     border-top: 0;
+    flex-wrap: wrap;
   }
 
   .account-card {
@@ -1639,7 +1641,7 @@ textarea {
   }
 
   .app-credit {
-    flex: 0 0 100%;
+    flex: 0 1 auto;
     padding-top: 2px;
   }
 
@@ -1744,28 +1746,99 @@ textarea {
 
 @media (max-width: 600px) {
   .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     padding-right: 10px;
     padding-left: 10px;
+    background: var(--nav-bg);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+  }
+
+  .brand-box {
+    grid-column: 1;
+    width: min(145px, 40vw);
   }
 
   .nav-menu {
-    gap: 10px;
+    grid-column: 1 / -1;
+    gap: 12px;
+    margin: 0 -10px;
+    padding: 4px 10px 6px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .nav-menu::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-group {
+    gap: 5px;
   }
 
   .nav-item {
+    min-height: 42px;
     gap: 7px;
-    padding: 8px 9px;
-    font-size: 0.78rem;
+    padding: 8px 10px;
+    font-size: 0.8rem;
   }
 
   .nav-icon {
-    width: 16px;
-    height: 16px;
-    flex-basis: 16px;
+    width: 17px;
+    height: 17px;
+    flex-basis: 17px;
+  }
+
+  .sidebar-footer {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 0;
+  }
+
+  .account-card {
+    flex: 0 0 auto;
+    gap: 5px;
+    padding: 0;
+  }
+
+  .account-copy,
+  .app-credit {
+    display: none;
+  }
+
+  .account-avatar {
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
+  }
+
+  .account-logout {
+    width: 36px;
+    height: 36px;
+  }
+
+  .account-tools {
+    display: block;
+    flex: 0 0 auto;
+  }
+
+  .password-toggle {
+    min-height: 38px;
+    padding: 7px 6px;
+    font-size: 0.62rem;
+    white-space: nowrap;
   }
 
   .main-panel {
-    padding: 18px 14px;
+    width: 100%;
+    padding: 18px 14px calc(24px + env(safe-area-inset-bottom));
   }
 
   .topbar {
@@ -1778,20 +1851,184 @@ textarea {
 
   .topbar-actions {
     width: 100%;
-    justify-content: space-between;
+    justify-content: stretch;
+  }
+
+  .topbar-sale {
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .panel {
+    min-width: 0;
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .panel-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .panel-header input,
+  .panel-header select {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .cards-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .metric-card {
+    min-width: 0;
+    gap: 8px;
+    padding: 13px;
+    border-radius: 14px;
+  }
+
+  .metric-card span {
+    font-size: 0.72rem;
+    line-height: 1.35;
+  }
+
+  .metric-card strong {
+    overflow-wrap: anywhere;
+    font-size: clamp(1.05rem, 5vw, 1.45rem);
   }
 
   .welcome-panel {
-    padding: 21px 18px;
+    min-height: 0;
+    gap: 16px;
+    padding: 19px 16px;
   }
 
   .quick-actions {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
   }
 
   .quick-action {
+    min-width: 0;
+    gap: 8px;
+    padding: 9px;
+  }
+
+  .quick-action:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .quick-action-icon {
+    width: 28px;
+    height: 28px;
+    flex-basis: 28px;
+  }
+
+  .quick-action strong {
+    font-size: 0.7rem;
+  }
+
+  .quick-action small {
+    font-size: 0.61rem;
+  }
+
+  .dashboard-period {
+    padding: 14px;
+  }
+
+  .dashboard-period-controls select,
+  .dashboard-custom-dates input {
     width: 100%;
+    min-height: 44px;
+  }
+
+  .dashboard-custom-dates label {
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+
+  .mini-metrics {
+    gap: 9px;
+  }
+
+  .mini-metrics div {
+    min-width: 0;
+    padding: 12px;
+  }
+
+  .mini-metrics strong {
+    overflow-wrap: anywhere;
+    font-size: 0.96rem;
+  }
+
+  .table-wrapper {
+    max-width: 100%;
+    border-radius: 8px;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table {
+    min-width: 560px;
+  }
+
+  .inventory-table {
+    min-width: 850px;
+  }
+
+  .form-grid input,
+  .form-grid select,
+  .form-grid textarea,
+  .client-autocomplete > input,
+  .order-parts-controls select,
+  .order-parts-controls input {
+    min-height: 44px;
+    min-width: 0;
+    font-size: 16px;
+  }
+
+  .form-grid textarea {
+    min-height: 100px;
+  }
+
+  .form-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .form-actions button,
+  .form-actions .primary-btn {
+    min-height: 44px;
+  }
+
+  .order-parts {
+    min-width: 0;
+    padding: 12px;
+  }
+
+  .order-parts-heading {
+    flex-direction: column;
+  }
+
+  .order-parts-list li {
+    min-width: 0;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .order-parts-list li > span:first-child {
+    min-width: 100px;
+    flex: 1;
+  }
+
+  .order-parts-list li > span:nth-child(2) {
+    white-space: nowrap;
+  }
+
+  .order-parts-list .danger-btn {
+    min-height: 38px;
   }
 
   .saved-record-notice {
@@ -1799,8 +2036,12 @@ textarea {
     flex-direction: column;
   }
 
+  .saved-record-notice button {
+    min-height: 44px;
+  }
+
   .pagination {
-    align-items: flex-start;
+    align-items: stretch;
     flex-direction: column;
   }
 
@@ -1811,5 +2052,30 @@ textarea {
 
   .record-actions.compact {
     flex-wrap: wrap;
+  }
+
+  .record-actions.compact > * {
+    min-height: 38px;
+  }
+
+  .inventory-adjust-row form {
+    gap: 10px;
+  }
+
+  .inventory-adjust-row form label,
+  .inventory-adjust-row form button {
+    min-width: 0;
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .connection-card {
+    padding: 22px 18px;
+  }
+
+  .login-card input,
+  .connection-card input {
+    min-height: 46px;
+    font-size: 16px;
   }
 }
