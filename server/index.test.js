@@ -6,6 +6,23 @@ import { createApp } from './index.js'
 
 test('persists records, protects the API, and decrements stock atomically', async () => {
   const db = createClient({ url: 'file::memory:' })
+  const createTransaction = db.transaction.bind(db)
+  db.transaction = async (...args) => {
+    const transaction = await createTransaction(...args)
+    return new Proxy(transaction, {
+      get(target, property) {
+        if (property === 'execute') {
+          return (...executeArgs) => {
+            assert.equal(executeArgs.length, 1, 'transaction statements must pass arguments in the statement object')
+            return target.execute(executeArgs[0])
+          }
+        }
+
+        const value = Reflect.get(target, property, target)
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    })
+  }
   const app = createApp({
     db,
     appUsername: 'richer',

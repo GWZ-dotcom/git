@@ -239,7 +239,7 @@ async function hydrateOrderAssociations(executor, order) {
 }
 
 async function syncOrderParts(transaction, currentOrder, nextOrder, changedAt) {
-  const shouldCalculatePartsCost = !currentOrder || Array.isArray(nextOrder.partsUsed)
+  const shouldCalculatePartsCost = Array.isArray(nextOrder.partsUsed)
   const previous = normalizeOrderParts(currentOrder?.partsUsed || [])
   const requested = normalizeOrderParts(nextOrder.partsUsed || [])
   if (previous.error || requested.error) {
@@ -787,8 +787,14 @@ export function createApp({
               sql: 'INSERT INTO counters (name, value) VALUES (?, 0) ON CONFLICT(name) DO NOTHING',
               args: ['orders'],
             })
-            await transaction.execute('UPDATE counters SET value = value + 1 WHERE name = ?', ['orders'])
-            const counter = await transaction.execute('SELECT value FROM counters WHERE name = ?', ['orders'])
+            await transaction.execute({
+              sql: 'UPDATE counters SET value = value + 1 WHERE name = ?',
+              args: ['orders'],
+            })
+            const counter = await transaction.execute({
+              sql: 'SELECT value FROM counters WHERE name = ?',
+              args: ['orders'],
+            })
             id = `OS-${String(counter.rows[0].value).padStart(6, '0')}`
             await transaction.commit()
           } catch (error) {
