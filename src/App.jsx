@@ -78,7 +78,8 @@ function getReadyWhatsAppUrl(order) {
   if (!phone) return ''
   const internationalPhone = phone.startsWith('55') ? phone : `55${phone}`
   if (internationalPhone.length < 12 || internationalPhone.length > 13) return ''
-  const message = `Olá, ${order.customer}! O serviço do seu aparelho ${order.device} foi concluído e está pronto para retirada na Soberano Assistência Técnica. OS ${order.id}.`
+  const workDetails = order.workReport ? `\nO que foi feito: ${order.workReport}` : ''
+  const message = `Olá, ${order.customer}! O serviço do seu aparelho ${order.device} foi concluído e está pronto para retirada na Soberano Assistência Técnica.\nOS ${order.id}.\nServiço: ${order.service}${workDetails}\nValor: ${currency.format(Number(order.total) || 0)}`
   return `https://wa.me/${internationalPhone}?text=${encodeURIComponent(message)}`
 }
 
@@ -550,6 +551,7 @@ function App() {
       await requestApi(`/${resource}/${encodeURIComponent(id)}`, { method: 'DELETE' })
       await reloadData()
       if (resource === 'clients') setLastSavedClient(null)
+      if (resource === 'inventory') setAdjustingInventoryId('')
       setErrorMessage('')
     } catch (error) {
       setErrorMessage(error.message)
@@ -1763,16 +1765,25 @@ function App() {
                       <td>{currency.format(item.price)}</td>
                       <td>{item.supplier || '—'}</td>
                       <td>
-                        <button
-                          type="button"
-                          className="ghost-btn inventory-adjust-button"
-                          onClick={() => {
-                            setAdjustingInventoryId((current) => current === item.id ? '' : item.id)
-                            setStockAdjustment({ quantity: '', unitCost: String(item.cost || ''), note: '' })
-                          }}
-                        >
-                          {adjustingInventoryId === item.id ? 'Cancelar' : '+ Repor'}
-                        </button>
+                        <div className="record-actions compact">
+                          <button
+                            type="button"
+                            className="ghost-btn inventory-adjust-button"
+                            onClick={() => {
+                              setAdjustingInventoryId((current) => current === item.id ? '' : item.id)
+                              setStockAdjustment({ quantity: '', unitCost: String(item.cost || ''), note: '' })
+                            }}
+                          >
+                            {adjustingInventoryId === item.id ? 'Cancelar' : '+ Repor'}
+                          </button>
+                          <button
+                            type="button"
+                            className="danger-btn"
+                            onClick={() => deleteRecord('inventory', item.id, `o produto ${item.name}`)}
+                          >
+                            Excluir
+                          </button>
+                        </div>
                       </td>
                     </tr>
                     {adjustingInventoryId === item.id && (

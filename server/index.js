@@ -1014,7 +1014,7 @@ export function createApp({
 
   app.delete('/api/:resource/:id', async (request, response, next) => {
     const { resource, id } = request.params
-    if (!['clients', 'devices', 'orders'].includes(resource)) {
+    if (!['clients', 'devices', 'orders', 'inventory'].includes(resource)) {
       return response.status(404).json({ error: 'Este tipo de registro não pode ser excluído por esta rota.' })
     }
 
@@ -1040,6 +1040,22 @@ export function createApp({
         if (partsResult.error) {
           await transaction.rollback()
           return response.status(partsResult.status).json({ error: partsResult.error })
+        }
+      }
+
+      if (resource === 'inventory') {
+        const orders = await transaction.execute({
+          sql: 'SELECT payload FROM records WHERE resource = ?',
+          args: ['orders'],
+        })
+        const isUsedInOrder = orders.rows.some((row) =>
+          (parseRecord(row).partsUsed || []).some((part) => part.inventoryId === id),
+        )
+        if (isUsedInOrder) {
+          await transaction.rollback()
+          return response.status(409).json({
+            error: 'Este produto está vinculado a uma ordem de serviço. Remova a peça da OS antes de excluir o produto.',
+          })
         }
       }
 

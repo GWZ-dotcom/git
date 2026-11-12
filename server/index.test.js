@@ -349,6 +349,13 @@ test('persists records, protects the API, and decrements stock atomically', asyn
     assert.equal(detachedState.devices[0].ownerId, '')
     assert.equal(detachedState.devices[0].ownerName, 'Cliente atualizado')
 
+    const blockedInventoryDelete = await call(`/inventory/${item.id}`, {
+      method: 'DELETE',
+      cookie: authenticatedCookie,
+    })
+    assert.equal(blockedInventoryDelete.status, 409)
+    assert.match((await blockedInventoryDelete.json()).error, /ordem de serviço/)
+
     const deleteOrderResponse = await call(`/orders/${order.id}`, {
       method: 'DELETE',
       cookie: authenticatedCookie,
@@ -369,6 +376,16 @@ test('persists records, protects the API, and decrements stock atomically', asyn
     assert.equal(deletedState.devices.length, 0)
     assert.equal(deletedState.orders.length, 0)
     assert.equal(deletedState.inventory.find((entry) => entry.id === item.id).stock, 2)
+
+    const deleteInventoryResponse = await call(`/inventory/${item.id}`, {
+      method: 'DELETE',
+      cookie: authenticatedCookie,
+    })
+    assert.equal(deleteInventoryResponse.status, 200)
+    const deletedInventoryStateResponse = await call('/state', { cookie: authenticatedCookie })
+    const deletedInventoryState = await deletedInventoryStateResponse.json()
+    assert.equal(deletedInventoryState.inventory.some((entry) => entry.id === item.id), false)
+    assert.equal(deletedInventoryState.sales.length, 3)
 
     await new Promise((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()))
