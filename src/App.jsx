@@ -912,7 +912,7 @@ function App() {
       `${entry.manufacturer} ${entry.model}` === order.device &&
       (!client || entry.ownerId === client.id),
     )
-    const logoUrl = `${window.location.origin}/logo-horizontal.png`
+    const logoUrl = `${window.location.origin}/logo-horizontal.jpg`
     const workReport = order.workReport || order.service || 'Relatório do serviço não informado.'
     const documentHtml = `<!doctype html>
       <html lang="pt-BR">
@@ -926,7 +926,7 @@ function App() {
             body { margin: 0; color: #172119; font: 12px/1.5 Arial, sans-serif; }
             .sheet { width: 100%; }
             .header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-bottom: 14px; border-bottom: 2px solid #159c50; }
-            .logo { display: block; width: 245px; max-height: 100px; object-fit: contain; object-position: left center; }
+            .logo { display: block; width: 245px; max-width: 45%; height: auto; }
             .heading { text-align: right; }
             .heading h1 { margin: 0; font-size: 21px; letter-spacing: .04em; }
             .heading strong { display: block; margin-top: 5px; color: #159c50; font-size: 15px; }
@@ -1488,13 +1488,40 @@ function App() {
 
   const renderOrdens = () => (
     <>
-      <div className="panel form-panel">
-        <div className="panel-header">
-          <h3>{editingOrderId ? `Editar ordem ${editingOrderId}` : 'Abrir ordem de serviço'}</h3>
+      <section className="order-overview" aria-label="Resumo das ordens de serviço">
+        <div className="order-overview-copy">
+          <span className="order-eyebrow">ASSISTÊNCIA TÉCNICA</span>
+          <h2>Ordens de serviço</h2>
+          <p>Organize cada atendimento, acompanhe o conserto e confirme a finalização.</p>
+          <div className="order-overview-links">
+            <a href="#order-form">Nova ordem</a>
+            <a href="#order-list">Ver ordens</a>
+            <button type="button" onClick={() => { setActiveTab('historico'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>Histórico de OS</button>
+          </div>
         </div>
-        <form onSubmit={handleOrderSubmit} className="form-grid">
+        <div className="order-overview-stats">
+          <div><strong>{activeOrders.length}</strong><span>Na lista de OS</span></div>
+          <div><strong>{completedOrders.length}</strong><span>Pagas e finalizadas</span></div>
+          <div><strong>{currency.format(data.finance.contasReceber)}</strong><span>Contas a receber</span></div>
+        </div>
+      </section>
+
+      <div className="panel form-panel order-form-panel" id="order-form">
+        <div className="panel-header order-panel-header">
+          <div>
+            <span className="order-eyebrow">ATENDIMENTO</span>
+            <h3>{editingOrderId ? `Editar ordem ${editingOrderId}` : 'Abrir ordem de serviço'}</h3>
+            <p>Preencha os dados do cliente, do aparelho e do serviço.</p>
+          </div>
+        </div>
+        <form onSubmit={handleOrderSubmit} className="form-grid order-form">
+          <div className="order-section-heading full-width">
+            <span>01</span><div><strong>Cliente e aparelho</strong><small>Identifique o atendimento</small></div>
+          </div>
           <div className="client-autocomplete">
+            <label htmlFor="order-customer">Cliente</label>
             <input
+              id="order-customer"
               value={orderForm.customer}
               onFocus={() => setShowOrderClientSuggestions(true)}
               onChange={(event) => {
@@ -1552,15 +1579,22 @@ function App() {
               </ul>
             )}
           </div>
-          <input
-            value={orderForm.phone}
-            onChange={(event) => setOrderForm((current) => ({ ...current, phone: event.target.value }))}
-            placeholder={selectedOrderClient ? 'Telefone não informado no cadastro' : 'Telefone'}
-            readOnly={Boolean(selectedOrderClient)}
-            aria-label={selectedOrderClient ? 'Telefone do cadastro do cliente' : 'Telefone'}
-          />
+          <label className="order-field">
+            Telefone / WhatsApp
+            <input
+              value={orderForm.phone}
+              onChange={(event) => setOrderForm((current) => ({ ...current, phone: event.target.value }))}
+              placeholder={selectedOrderClient ? 'Telefone não informado no cadastro' : 'Telefone'}
+              readOnly={Boolean(selectedOrderClient)}
+              aria-label={selectedOrderClient ? 'Telefone do cadastro do cliente' : 'Telefone'}
+            />
+          </label>
+          <div className="order-field">
+          <label htmlFor="order-device">Aparelho</label>
           {selectedClientDevices.length > 0 ? (
             <select
+              id="order-device"
+              className="order-device-input"
               value={selectedOrderDeviceId}
               onChange={(event) => {
                 const device = selectedClientDevices.find((entry) => entry.id === event.target.value)
@@ -1583,6 +1617,8 @@ function App() {
           ) : (
             <>
               <input
+                id="order-device"
+                className="order-device-input"
                 list="device-options"
                 value={orderForm.device}
                 onChange={(event) => {
@@ -1604,12 +1640,25 @@ function App() {
               </datalist>
             </>
           )}
-          <input value={orderForm.imei} onChange={(e) => setOrderForm({ ...orderForm, imei: e.target.value })} placeholder="IMEI" />
-          <input value={orderForm.service} onChange={(e) => setOrderForm({ ...orderForm, service: e.target.value })} placeholder="Serviço" required />
-          <select value={orderForm.status} onChange={(e) => setOrderForm({ ...orderForm, status: e.target.value })}>
-            {statusOptions.map((status) => <option key={status}>{status}</option>)}
-          </select>
-          <label className="field-with-hint">
+          </div>
+          <label className="order-field">
+            IMEI <span className="order-optional">Opcional</span>
+            <input value={orderForm.imei} onChange={(e) => setOrderForm({ ...orderForm, imei: e.target.value })} placeholder="IMEI do aparelho" />
+          </label>
+          <div className="order-section-heading full-width">
+            <span>02</span><div><strong>Serviço e valores</strong><small>Registre o que será feito</small></div>
+          </div>
+          <label className="order-field">
+            Serviço
+            <input value={orderForm.service} onChange={(e) => setOrderForm({ ...orderForm, service: e.target.value })} placeholder="Ex.: troca de tela" required />
+          </label>
+          <label className="order-field">
+            Status da ordem
+            <select value={orderForm.status} onChange={(e) => setOrderForm({ ...orderForm, status: e.target.value })}>
+              {statusOptions.map((status) => <option key={status}>{status}</option>)}
+            </select>
+          </label>
+          <label className="field-with-hint order-field">
             Valor da manutenção
             <input type="number" min="0" step="0.01" value={orderForm.total} onChange={(e) => setOrderForm({ ...orderForm, total: e.target.value })} placeholder="Mão de obra / serviço" required />
             <small>Valor cobrado pelo serviço. O custo das peças é calculado pelos itens do estoque.</small>
@@ -1666,49 +1715,52 @@ function App() {
               </ul>
             ) : <p className="order-parts-empty">Nenhuma peça selecionada.</p>}
           </section>
-          <textarea value={orderForm.workReport} onChange={(e) => setOrderForm({ ...orderForm, workReport: e.target.value })} placeholder="Relatório do serviço executado (aparece no PDF)" className="full-width" rows="4" />
-          <div className="form-actions full-width">
+          <label className="order-field full-width">
+            Relatório do serviço <span className="order-optional">Opcional</span>
+            <textarea value={orderForm.workReport} onChange={(e) => setOrderForm({ ...orderForm, workReport: e.target.value })} placeholder="Descreva o serviço executado. Este texto aparece no PDF e no aviso ao cliente." rows="4" />
+          </label>
+          <div className="form-actions full-width order-form-actions">
             {editingOrderId && <button type="button" className="ghost-btn" onClick={() => { setEditingOrderId(''); setSelectedOrderClientId(''); setSelectedOrderDeviceId(''); setOrderParts([]); setPartDraft({ inventoryId: '', quantity: 1 }); setShowOrderClientSuggestions(false); setOrderForm({ customer: '', phone: '', device: '', imei: '', service: '', workReport: '', status: 'Recebido', total: '' }) }}>Cancelar edição</button>}
             <button type="submit" className="primary-btn">{editingOrderId ? 'Salvar alterações' : 'Salvar OS'}</button>
           </div>
         </form>
       </div>
 
-      <div className="panel">
-        <div className="panel-header">
-          <h3>Ordens de serviço</h3>
+      <div className="panel order-list-panel" id="order-list">
+        <div className="panel-header order-panel-header">
+          <div>
+            <span className="order-eyebrow">ACOMPANHAMENTO</span>
+            <h3>Ordens de serviço <span className="list-total">{activeOrders.length}</span></h3>
+            <p>Atualize o status e acompanhe os atendimentos.</p>
+          </div>
           <button type="button" className="ghost-btn" onClick={() => { setActiveTab('historico'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
             Ver histórico ({completedOrders.length})
           </button>
         </div>
-        <div className="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th>OS</th>
-                <th>Cliente</th>
-                <th>Aparelho</th>
-                <th>Status</th>
-                <th>Valor da manutenção</th>
-                <th>Ação</th>
-              </tr>
-            </thead>
-            <tbody>
-              {activeOrders.map((order) => (
-                <tr key={order.id}>
-                  <td>{order.id}</td>
-                  <td>{order.customer}</td>
-                  <td>{order.device}</td>
-                  <td>
-                    <select value={order.status} onChange={(event) => updateOrderStatus(order.id, event.target.value)}>
+        <div className="order-list">
+          {activeOrders.map((order) => (
+            <article key={order.id} className="order-card">
+              <div className="order-card-header">
+                <div>
+                  <span className="order-card-id">{order.id}</span>
+                  <h4>{order.customer}</h4>
+                  <p>{order.device}</p>
+                </div>
+                <div className="order-card-value"><span>Valor da manutenção</span><strong>{currency.format(order.total)}</strong></div>
+              </div>
+              <div className="order-card-details">
+                <div><span>Serviço</span><strong>{order.service}</strong></div>
+                <div><span>Aberta em</span><strong>{formatOrderDate(order.openedAt)}</strong></div>
+                <label>
+                  Status
+                  <select aria-label={`Status da ordem ${order.id}`} value={order.status} onChange={(event) => updateOrderStatus(order.id, event.target.value)}>
                       {statusOptions.map((status) => (
                         <option key={status} value={status}>{status}</option>
                       ))}
-                    </select>
-                  </td>
-                  <td>{currency.format(order.total)}</td>
-                  <td>
-                    <div className="record-actions compact">
+                  </select>
+                </label>
+              </div>
+              <div className="order-card-actions">
                       <button type="button" className="ghost-btn" onClick={() => generateOrderPdf(order)}>Gerar PDF</button>
                       <button type="button" className="ghost-btn" onClick={() => beginOrderEdit(order)}>Editar</button>
                       {order.status !== 'Cancelado' && (
@@ -1722,13 +1774,10 @@ function App() {
                         </a>
                       )}
                       <button type="button" className="danger-btn" onClick={() => deleteRecord('orders', order.id, `a ordem ${order.id}`)}>Excluir</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {activeOrders.length === 0 && <tr><td colSpan="6" className="empty-state">Nenhuma ordem de serviço em aberto.</td></tr>}
-            </tbody>
-          </table>
+              </div>
+            </article>
+          ))}
+          {activeOrders.length === 0 && <p className="order-list-empty">Nenhuma ordem de serviço na lista. Cadastre uma nova ordem para começar.</p>}
         </div>
       </div>
     </>
