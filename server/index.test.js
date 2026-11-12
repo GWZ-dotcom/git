@@ -70,6 +70,26 @@ test('persists records, protects the API, and decrements stock atomically', asyn
     const blockedState = await call('/state', { cookie })
     assert.equal(blockedState.status, 403)
 
+    const shortPasswordChange = await call('/account/password', {
+      method: 'POST',
+      cookie,
+      body: JSON.stringify({
+        currentPassword: '1020304050',
+        newPassword: 'short',
+      }),
+    })
+    assert.equal(shortPasswordChange.status, 400)
+
+    const unchangedPasswordChange = await call('/account/password', {
+      method: 'POST',
+      cookie,
+      body: JSON.stringify({
+        currentPassword: '1020304050',
+        newPassword: '1020304050',
+      }),
+    })
+    assert.equal(unchangedPasswordChange.status, 400)
+
     const passwordChange = await call('/account/password', {
       method: 'POST',
       cookie,
@@ -245,6 +265,27 @@ test('persists records, protects the API, and decrements stock atomically', asyn
     assert.equal(state.finance.despesas, 40)
     assert.equal(state.cash.length, 2)
     assert.equal(state.cash.reduce((sum, entry) => sum + entry.amount, 0), 40)
+    assert.equal(state.finance.contasReceber, 50)
+
+    const completeOrderResponse = await call(`/orders/${order.id}/complete`, {
+      method: 'POST',
+      cookie: authenticatedCookie,
+    })
+    assert.equal(completeOrderResponse.status, 200)
+    const completedOrder = await completeOrderResponse.json()
+    assert.equal(completedOrder.status, 'Entregue ao cliente')
+    assert.ok(completedOrder.paidAt)
+    assert.equal(completedOrder.statusHistory.at(-1).status, 'Entregue ao cliente')
+    const completedOrderStateResponse = await call('/state', { cookie: authenticatedCookie })
+    const completedOrderState = await completedOrderStateResponse.json()
+    assert.equal(completedOrderState.finance.contasReceber, 0)
+    assert.equal(completedOrderState.finance.assistencia, 50)
+
+    const repeatCompleteOrderResponse = await call(`/orders/${order.id}/complete`, {
+      method: 'POST',
+      cookie: authenticatedCookie,
+    })
+    assert.equal(repeatCompleteOrderResponse.status, 409)
 
     const secondInventoryResponse = await call('/inventory', {
       method: 'POST',
@@ -307,13 +348,14 @@ test('persists records, protects the API, and decrements stock atomically', asyn
       method: 'POST',
       cookie: authenticatedCookie,
       body: JSON.stringify({
-        customer: '',
+        customer: 'Cliente de balcão',
         method: 'Dinheiro',
         items: [{ inventoryId: item.id, quantity: 1 }],
       }),
     })
     assert.equal(walkInCheckout.status, 201)
-    assert.equal((await walkInCheckout.json()).customer, '')
+    const walkInSale = await walkInCheckout.json()
+    assert.equal(walkInSale.customer, 'Cliente de balcão')
     const afterWalkInCheckout = await call('/state', { cookie: authenticatedCookie })
     const afterWalkInState = await afterWalkInCheckout.json()
     assert.equal(afterWalkInState.inventory.find((entry) => entry.id === item.id).stock, 0)
@@ -321,6 +363,61 @@ test('persists records, protects the API, and decrements stock atomically', asyn
     assert.equal(afterWalkInState.sales.length, 3)
     assert.equal(afterWalkInState.finance.vendas, 110)
     assert.equal(afterWalkInState.finance.despesas, 58)
+
+    const cashResponse = await call('/cash', {
+      method: 'POST',
+      cookie: authenticatedCookie,
+      body: JSON.stringify({
+        description: 'Movimentação temporária',
+        type: 'entrada',
+        amount: 12,
+        date: '2026-11-12',
+      }),
+    })
+    assert.equal(cashResponse.status, 201)
+    const cashEntry = await cashResponse.json()
+    const updatedCashResponse = await call(`/cash/${cashEntry.id}`, {
+      method: 'PATCH',
+      cookie: authenticatedCookie,
+      body: JSON.stringify({
+        description: 'Movimentação corrigida',
+        type: 'saída',
+        amount: 15,
+        date: '2026-11-11',
+      }),
+    })
+    assert.equal(updatedCashResponse.status, 200)
+    assert.equal((await updatedCashResponse.json()).description, 'Movimentação corrigida')
+    const updatedCashStateResponse = await call('/state', { cookie: authenticatedCookie })
+    const updatedCashState = await updatedCashStateResponse.json()
+    assert.equal(updatedCashState.finance.despesas, 73)
+
+    const deleteCashResponse = await call(`/cash/${cashEntry.id}`, {
+      method: 'DELETE',
+      cookie: authenticatedCookie,
+    })
+    assert.equal(deleteCashResponse.status, 200)
+    const restoredCashStateResponse = await call('/state', { cookie: authenticatedCookie })
+    const restoredCashState = await restoredCashStateResponse.json()
+    assert.equal(restoredCashState.finance.despesas, 58)
+    assert.equal(restoredCashState.cash.some((entry) => entry.id === cashEntry.id), false)
+
+    const cancelSaleResponse = await call(`/sales/${walkInSale.id}/cancel`, {
+      method: 'POST',
+      cookie: authenticatedCookie,
+    })
+    assert.equal(cancelSaleResponse.status, 200)
+    assert.equal((await cancelSaleResponse.json()).status, 'Cancelada')
+    const repeatCancelSaleResponse = await call(`/sales/${walkInSale.id}/cancel`, {
+      method: 'POST',
+      cookie: authenticatedCookie,
+    })
+    assert.equal(repeatCancelSaleResponse.status, 409)
+    const cancelledSaleStateResponse = await call('/state', { cookie: authenticatedCookie })
+    const cancelledSaleState = await cancelledSaleStateResponse.json()
+    assert.equal(cancelledSaleState.inventory.find((entry) => entry.id === item.id).stock, 1)
+    assert.equal(cancelledSaleState.finance.vendas, 90)
+    assert.equal(cancelledSaleState.sales.find((entry) => entry.id === walkInSale.id).status, 'Cancelada')
 
     const updatedClientResponse = await call(`/clients/${client.id}`, {
       method: 'PATCH',
@@ -364,7 +461,7 @@ test('persists records, protects the API, and decrements stock atomically', asyn
     const orderDeletedStateResponse = await call('/state', { cookie: authenticatedCookie })
     const orderDeletedState = await orderDeletedStateResponse.json()
     assert.deepEqual(orderDeletedState.devices[0].history, [])
-    assert.equal(orderDeletedState.inventory.find((entry) => entry.id === item.id).stock, 2)
+    assert.equal(orderDeletedState.inventory.find((entry) => entry.id === item.id).stock, 3)
 
     const deleteDeviceResponse = await call(`/devices/${device.id}`, {
       method: 'DELETE',
@@ -375,7 +472,7 @@ test('persists records, protects the API, and decrements stock atomically', asyn
     const deletedState = await deletedStateResponse.json()
     assert.equal(deletedState.devices.length, 0)
     assert.equal(deletedState.orders.length, 0)
-    assert.equal(deletedState.inventory.find((entry) => entry.id === item.id).stock, 2)
+    assert.equal(deletedState.inventory.find((entry) => entry.id === item.id).stock, 3)
 
     const deleteInventoryResponse = await call(`/inventory/${item.id}`, {
       method: 'DELETE',

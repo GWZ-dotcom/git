@@ -160,7 +160,9 @@ async function getFinance(db) {
     ['sales', 'orders', 'cash', 'inventory'],
   )
   const entries = result.rows.map(parseRecord)
-  const sales = entries.filter((_, index) => result.rows[index].resource === 'sales')
+  const sales = entries.filter((_, index) =>
+    result.rows[index].resource === 'sales' && !entries[index].cancelledAt,
+  )
   const orders = entries.filter((_, index) => result.rows[index].resource === 'orders')
   const cash = entries.filter((_, index) => result.rows[index].resource === 'cash')
   const expenses = cash
@@ -176,12 +178,15 @@ async function getFinance(db) {
   const revenue = salesRevenue + serviceRevenue
   const costOfGoods = sales.reduce((sum, entry) => sum + Number(entry.cost || 0), 0)
   const partsCost = orders.reduce((sum, entry) => sum + Number(entry.partsCost || 0), 0)
+  const accountsReceivable = orders
+    .filter((entry) => !entry.paidAt && entry.status !== 'Cancelado')
+    .reduce((sum, entry) => sum + Math.max(0, Number(entry.total || 0) - Number(entry.deposit || 0)), 0)
 
   return {
     receitas: revenue,
     despesas: expenses,
     contasPagar: 0,
-    contasReceber: 0,
+    contasReceber: accountsReceivable,
     lucroBruto: revenue - costOfGoods - partsCost,
     lucroLiquido: revenue - costOfGoods - partsCost - operatingExpenses,
     vendas: salesRevenue,
@@ -752,6 +757,122 @@ export function createApp({
     }
   })
 
+  app.post('/api/sales/:id/cancel', async (request, response, next) => {
+    const { id } = request.params
+    const transaction = await db.transaction('write')
+    try {
+      const existing = await transaction.execute({
+        sql: 'SELECT payload FROM records WHERE resource = ? AND id = ?',
+        args: ['sales', id],
+      })
+      if (!existing.rows.length) {
+        await transaction.rollback()
+        return response.status(404).json({ error: 'Venda não encontrada.' })
+      }
+
+      const sale = parseRecord(existing.rows[0])
+      if (sale.cancelledAt) {
+        await transaction.rollback()
+        return response.status(409).json({ error: 'Esta venda já foi cancelada.' })
+      }
+
+      const soldItems = Array.isArray(sale.items)
+        ? sale.items
+        : sale.inventoryId
+          ? [{ inventoryId: sale.inventoryId, quantity: sale.quantity || 1 }]
+          : []
+      const changedAt = now()
+      for (const soldItem of soldItems) {
+        const inventoryId = typeof soldItem.inventoryId === 'string' ? soldItem.inventoryId : ''
+        const quantity = Number(soldItem.quantity)
+        if (!inventoryId || !Number.isInteger(quantity) || quantity <= 0) {
+          await transaction.rollback()
+          return response.status(409).json({ error: 'Não foi possível identificar os produtos desta venda para estornar o estoque.' })
+        }
+
+        const inventoryResult = await transaction.execute({
+          sql: 'SELECT payload FROM records WHERE resource = ? AND id = ?',
+          args: ['inventory', inventoryId],
+        })
+        if (!inventoryResult.rows.length) continue
+
+        const item = parseRecord(inventoryResult.rows[0])
+        item.stock = Number(item.stock || 0) + quantity
+        item.stockHistory = [
+          ...(item.stockHistory || []),
+          {
+            type: 'entrada',
+            quantity,
+            note: `Estorno da venda ${sale.id}`,
+            changedAt,
+          },
+        ]
+        await transaction.execute({
+          sql: 'UPDATE records SET payload = ?, updated_at = ? WHERE resource = ? AND id = ?',
+          args: [JSON.stringify(item), changedAt, 'inventory', inventoryId],
+        })
+      }
+
+      const cancelledSale = { ...sale, status: 'Cancelada', cancelledAt: changedAt }
+      await transaction.execute({
+        sql: 'UPDATE records SET payload = ?, updated_at = ? WHERE resource = ? AND id = ?',
+        args: [JSON.stringify(cancelledSale), changedAt, 'sales', id],
+      })
+      await transaction.commit()
+      response.json(cancelledSale)
+    } catch (error) {
+      await transaction.rollback()
+      next(error)
+    }
+  })
+
+  app.post('/api/orders/:id/complete', async (request, response, next) => {
+    const { id } = request.params
+    const transaction = await db.transaction('write')
+    try {
+      const existing = await transaction.execute({
+        sql: 'SELECT payload FROM records WHERE resource = ? AND id = ?',
+        args: ['orders', id],
+      })
+      if (!existing.rows.length) {
+        await transaction.rollback()
+        return response.status(404).json({ error: 'Ordem de serviço não encontrada.' })
+      }
+
+      const order = parseRecord(existing.rows[0])
+      if (order.status === 'Cancelado') {
+        await transaction.rollback()
+        return response.status(409).json({ error: 'Uma ordem cancelada não pode ser finalizada como paga.' })
+      }
+      if (order.paidAt) {
+        await transaction.rollback()
+        return response.status(409).json({ error: 'Esta ordem já foi confirmada como paga e finalizada.' })
+      }
+
+      const completedAt = now()
+      const completedOrder = {
+        ...order,
+        status: 'Entregue ao cliente',
+        paidAt: completedAt,
+        statusHistory: [
+          ...(order.statusHistory || []),
+          ...(order.status === 'Entregue ao cliente'
+            ? []
+            : [{ status: 'Entregue ao cliente', changedAt: completedAt, responsible: 'Operador' }]),
+        ],
+      }
+      await transaction.execute({
+        sql: 'UPDATE records SET payload = ?, updated_at = ? WHERE resource = ? AND id = ?',
+        args: [JSON.stringify(completedOrder), completedAt, 'orders', id],
+      })
+      await transaction.commit()
+      response.json(completedOrder)
+    } catch (error) {
+      await transaction.rollback()
+      next(error)
+    }
+  })
+
   app.post('/api/:resource', async (request, response, next) => {
     const { resource } = request.params
     if (!resources.includes(resource)) {
@@ -1014,7 +1135,7 @@ export function createApp({
 
   app.delete('/api/:resource/:id', async (request, response, next) => {
     const { resource, id } = request.params
-    if (!['clients', 'devices', 'orders', 'inventory'].includes(resource)) {
+    if (!['clients', 'devices', 'orders', 'inventory', 'cash'].includes(resource)) {
       return response.status(404).json({ error: 'Este tipo de registro não pode ser excluído por esta rota.' })
     }
 

@@ -220,6 +220,7 @@ function App() {
   const username = 'richer'
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
   const [today] = useState(() => formatDateKey(new Date()))
   const [dashboardPeriod, setDashboardPeriod] = useState('month')
   const [customPeriod, setCustomPeriod] = useState(() => ({
@@ -234,6 +235,7 @@ function App() {
   const [editingClientId, setEditingClientId] = useState('')
   const [editingDeviceId, setEditingDeviceId] = useState('')
   const [editingOrderId, setEditingOrderId] = useState('')
+  const [editingCashId, setEditingCashId] = useState('')
   const [selectedOrderClientId, setSelectedOrderClientId] = useState('')
   const [selectedOrderDeviceId, setSelectedOrderDeviceId] = useState('')
   const [showOrderClientSuggestions, setShowOrderClientSuggestions] = useState(false)
@@ -264,6 +266,7 @@ function App() {
     description: '',
     type: 'saída',
     amount: '',
+    date: today,
   })
 
   const [clientForm, setClientForm] = useState({
@@ -439,7 +442,8 @@ function App() {
       })
   }, [data.inventory, searchInventory])
 
-  const totalSales = data.sales.reduce((sum, sale) => sum + Number(sale.total || 0), 0)
+  const activeSales = data.sales.filter((sale) => !sale.cancelledAt)
+  const totalSales = activeSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0)
   const lowStockItems = data.inventory.filter((item) => item.stock <= item.minStock)
   const openOrders = data.orders.filter((order) => order.status !== 'Entregue ao cliente' && order.status !== 'Cancelado')
   const periodRange = useMemo(() => {
@@ -476,8 +480,10 @@ function App() {
     const date = String(value || '').slice(0, 10)
     return isPeriodValid && date >= periodRange.start && date <= periodRange.end
   }
-  const periodSales = data.sales.filter((sale) => inSelectedPeriod(sale.date))
+  const periodSales = activeSales.filter((sale) => inSelectedPeriod(sale.date))
   const periodOrders = data.orders.filter((order) => inSelectedPeriod(order.openedAt))
+  const activeOrders = data.orders.filter((order) => !order.paidAt)
+  const completedOrders = data.orders.filter((order) => order.paidAt)
   const periodCash = data.cash.filter((entry) => inSelectedPeriod(entry.date))
   const periodSalesRevenue = periodSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0)
   const periodServiceRevenue = periodOrders
@@ -564,6 +570,10 @@ function App() {
       await reloadData()
       if (resource === 'clients') setLastSavedClient(null)
       if (resource === 'inventory') setAdjustingInventoryId('')
+      if (resource === 'cash' && editingCashId === id) {
+        setEditingCashId('')
+        setCashForm({ description: '', type: 'saída', amount: '', date: today })
+      }
       setErrorMessage('')
     } catch (error) {
       setErrorMessage(error.message)
@@ -595,6 +605,17 @@ function App() {
 
   const handlePasswordChange = async (event) => {
     event.preventDefault()
+    if (newPassword.length < 12) {
+      setErrorMessage('A nova senha precisa ter pelo menos 12 caracteres.')
+      return
+    }
+    if (newPassword === currentPassword) {
+      setErrorMessage('Escolha uma senha diferente da senha atual.')
+      return
+    }
+
+    setIsChangingPassword(true)
+    setErrorMessage('')
     try {
       await requestApi('/account/password', {
         method: 'POST',
@@ -607,6 +628,8 @@ function App() {
       await reloadData()
     } catch (error) {
       setErrorMessage(error.message)
+    } finally {
+      setIsChangingPassword(false)
     }
   }
 
@@ -750,8 +773,6 @@ function App() {
       setOrderParts([])
       setPartDraft({ inventoryId: '', quantity: 1 })
       setEditingOrderId('')
-    } else {
-      readyNotification?.popup?.close()
     }
   }
 
@@ -946,6 +967,19 @@ function App() {
     }
   }
 
+  const finalizeOrderPaid = async (order) => {
+    if (order.paidAt || order.status === 'Cancelado') return
+    if (!window.confirm(`Confirmar que a OS ${order.id} foi paga e o conserto finalizado?`)) return
+
+    try {
+      await requestApi(`/orders/${encodeURIComponent(order.id)}/complete`, { method: 'POST' })
+      await reloadData()
+      setErrorMessage('')
+    } catch (error) {
+      setErrorMessage(error.message)
+    }
+  }
+
   const handleInventorySubmit = async (event) => {
     event.preventDefault()
     const saved = await saveRecord('inventory', {
@@ -1015,6 +1049,19 @@ function App() {
     }
   }
 
+  const handleSaleCancel = async (sale) => {
+    if (sale.cancelledAt) return
+    if (!window.confirm(`Deseja cancelar a venda ${sale.id}? Os produtos ainda cadastrados serão devolvidos ao estoque.`)) return
+
+    try {
+      await requestApi(`/sales/${encodeURIComponent(sale.id)}/cancel`, { method: 'POST' })
+      await reloadData()
+      setErrorMessage('')
+    } catch (error) {
+      setErrorMessage(error.message)
+    }
+  }
+
   const addSaleCartItem = () => {
     const item = data.inventory.find((product) => product.id === saleForm.inventoryId)
     const quantity = Number(saleForm.quantity)
@@ -1049,14 +1096,28 @@ function App() {
 
   const handleCashSubmit = async (event) => {
     event.preventDefault()
-    const saved = await saveRecord('cash', {
+    const record = {
       ...cashForm,
       amount: Number(cashForm.amount),
-      date: new Date().toISOString().slice(0, 10),
-    })
-    if (saved) {
-      setCashForm({ description: '', type: 'saída', amount: '' })
     }
+    const saved = editingCashId
+      ? await updateRecord('cash', editingCashId, record)
+      : await saveRecord('cash', record)
+    if (saved) {
+      setEditingCashId('')
+      setCashForm({ description: '', type: 'saída', amount: '', date: today })
+    }
+  }
+
+  const beginCashEdit = (item) => {
+    setCashForm({
+      description: item.description || '',
+      type: item.type || 'saída',
+      amount: String(item.amount ?? ''),
+      date: item.date || today,
+    })
+    setEditingCashId(item.id)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const renderDashboard = () => (
@@ -1573,7 +1634,7 @@ function App() {
               </tr>
             </thead>
             <tbody>
-              {data.orders.map((order) => (
+              {activeOrders.map((order) => (
                 <tr key={order.id}>
                   <td>{order.id}</td>
                   <td>{order.customer}</td>
@@ -1583,7 +1644,6 @@ function App() {
                       {statusOptions.map((status) => (
                         <option key={status} value={status}>{status}</option>
                       ))}
-                      {data.orders.length === 0 && <tr><td colSpan="6">Nenhuma ordem de serviço cadastrada.</td></tr>}
                     </select>
                   </td>
                   <td>{currency.format(order.total)}</td>
@@ -1591,6 +1651,11 @@ function App() {
                     <div className="record-actions compact">
                       <button type="button" className="ghost-btn" onClick={() => generateOrderPdf(order)}>Gerar PDF</button>
                       <button type="button" className="ghost-btn" onClick={() => beginOrderEdit(order)}>Editar</button>
+                      {order.status !== 'Cancelado' && (
+                        <button type="button" className="primary-btn" onClick={() => finalizeOrderPaid(order)}>
+                          Pago e finalizar
+                        </button>
+                      )}
                       {whatsappUpdateStatuses.includes(order.status) && getOrderWhatsAppUrl(order) && (
                         <a className="whatsapp-btn" href={getOrderWhatsAppUrl(order)} target="_blank" rel="noreferrer">
                           Avisar cliente
@@ -1601,7 +1666,44 @@ function App() {
                   </td>
                 </tr>
               ))}
-              {data.orders.length === 0 && <tr><td colSpan="6" className="empty-state">Nenhuma ordem de serviço cadastrada.</td></tr>}
+              {activeOrders.length === 0 && <tr><td colSpan="6" className="empty-state">Nenhuma ordem de serviço em aberto.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <h3>Histórico de OS finalizadas <span className="list-total">{completedOrders.length}</span></h3>
+        </div>
+        <div className="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>OS</th>
+                <th>Cliente</th>
+                <th>Aparelho</th>
+                <th>Serviço</th>
+                <th>Valor pago</th>
+                <th>Finalizada em</th>
+                <th>Ação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {completedOrders.map((order) => (
+                <tr key={order.id}>
+                  <td>{order.id}</td>
+                  <td>{order.customer}</td>
+                  <td>{order.device}</td>
+                  <td>{order.service}</td>
+                  <td>{currency.format(order.total)}</td>
+                  <td>{formatOrderDate(order.paidAt)}</td>
+                  <td><button type="button" className="ghost-btn" onClick={() => generateOrderPdf(order)}>Gerar PDF</button></td>
+                </tr>
+              ))}
+              {completedOrders.length === 0 && (
+                <tr><td colSpan="7" className="empty-state">As OS confirmadas como pagas e finalizadas aparecerão aqui.</td></tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -1839,17 +1941,20 @@ function App() {
           <button type="button" className="primary-btn" onClick={addSaleCartItem}>Adicionar produto</button>
         </div>
         <div className="sale-customer-field">
-          <label htmlFor="sale-customer">Cliente (opcional)</label>
-          <select
+          <label htmlFor="sale-customer">Nome do cliente (opcional)</label>
+          <input
             id="sale-customer"
+            type="text"
             value={saleForm.customer}
             onChange={(event) => setSaleForm((current) => ({ ...current, customer: event.target.value }))}
-          >
-            <option value="">Venda sem cliente</option>
+            placeholder="Digite o nome ou deixe em branco"
+            list="sale-customer-suggestions"
+          />
+          <datalist id="sale-customer-suggestions">
             {data.clients.map((client) => (
-              <option key={client.id} value={client.name}>{client.name} — {client.cpf}</option>
+              <option key={client.id} value={client.name} />
             ))}
-          </select>
+          </datalist>
         </div>
         <div className="sale-cart-list">
           {saleCart.length > 0 ? (
@@ -1897,11 +2002,11 @@ function App() {
           </div>
           <div>
             <span>PIX</span>
-            <strong>{currency.format(data.sales.filter((sale) => sale.method === 'PIX').reduce((sum, sale) => sum + sale.total, 0))}</strong>
+            <strong>{currency.format(activeSales.filter((sale) => sale.method === 'PIX').reduce((sum, sale) => sum + Number(sale.total || 0), 0))}</strong>
           </div>
           <div>
             <span>Cartão</span>
-            <strong>{currency.format(data.sales.filter((sale) => sale.method.includes('Cartão')).reduce((sum, sale) => sum + sale.total, 0))}</strong>
+            <strong>{currency.format(activeSales.filter((sale) => String(sale.method || '').includes('Cartão')).reduce((sum, sale) => sum + Number(sale.total || 0), 0))}</strong>
           </div>
         </div>
       </div>
@@ -1919,19 +2024,29 @@ function App() {
                 <th>Produto</th>
                 <th>Forma</th>
                 <th>Total</th>
+                <th>Status</th>
+                <th>Ação</th>
               </tr>
             </thead>
             <tbody>
               {data.sales.map((sale) => (
-                <tr key={sale.id}>
+                <tr key={sale.id} className={sale.cancelledAt ? 'cancelled-sale' : ''}>
                   <td>{sale.id}</td>
-                  <td>{sale.customer}</td>
+                  <td>{sale.customer || 'Sem cliente'}</td>
                   <td>{sale.items?.map((item) => `${item.name} (${item.quantity})`).join(', ') || sale.product}</td>
                   <td>{sale.method}</td>
                   <td>{currency.format(sale.total)}</td>
+                  <td>{sale.cancelledAt ? 'Cancelada' : 'Concluída'}</td>
+                  <td>
+                    {!sale.cancelledAt && (
+                      <button type="button" className="danger-btn" onClick={() => handleSaleCancel(sale)}>
+                        Cancelar venda
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
-              {data.sales.length === 0 && <tr><td colSpan="5">Nenhuma venda registrada.</td></tr>}
+              {data.sales.length === 0 && <tr><td colSpan="7">Nenhuma venda registrada.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -1958,17 +2073,36 @@ function App() {
           <span>Faturamento de assistência</span>
           <strong>{currency.format(data.finance.assistencia)}</strong>
         </article>
+        <article className="metric-card accent-orange">
+          <span>Contas a receber de OS</span>
+          <strong>{currency.format(data.finance.contasReceber)}</strong>
+        </article>
       </section>
 
       <div className="panel form-panel">
-        <div className="panel-header"><h3>Registrar movimentação de caixa</h3></div>
+        <div className="panel-header"><h3>{editingCashId ? 'Editar movimentação de caixa' : 'Registrar movimentação de caixa'}</h3></div>
         <form onSubmit={handleCashSubmit} className="form-grid">
           <input value={cashForm.description} onChange={(event) => setCashForm({ ...cashForm, description: event.target.value })} placeholder="Descrição" required />
           <select value={cashForm.type} onChange={(event) => setCashForm({ ...cashForm, type: event.target.value })}>
             <option value="entrada">Entrada</option><option value="saída">Saída</option>
           </select>
           <input type="number" min="0.01" step="0.01" value={cashForm.amount} onChange={(event) => setCashForm({ ...cashForm, amount: event.target.value })} placeholder="Valor" required />
-          <button type="submit" className="primary-btn full-width">Salvar movimentação</button>
+          <input type="date" value={cashForm.date} onChange={(event) => setCashForm({ ...cashForm, date: event.target.value })} required aria-label="Data da movimentação" />
+          <div className="form-actions full-width">
+            {editingCashId && (
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => {
+                  setEditingCashId('')
+                  setCashForm({ description: '', type: 'saída', amount: '', date: today })
+                }}
+              >
+                Cancelar edição
+              </button>
+            )}
+            <button type="submit" className="primary-btn">{editingCashId ? 'Salvar alterações' : 'Salvar movimentação'}</button>
+          </div>
         </form>
       </div>
 
@@ -1984,6 +2118,7 @@ function App() {
                 <th>Tipo</th>
                 <th>Valor</th>
                 <th>Data</th>
+                <th>Ação</th>
               </tr>
             </thead>
             <tbody>
@@ -1993,9 +2128,15 @@ function App() {
                   <td>{item.type}</td>
                   <td>{currency.format(item.amount)}</td>
                   <td>{item.date}</td>
+                  <td>
+                    <div className="record-actions compact">
+                      <button type="button" className="ghost-btn" onClick={() => beginCashEdit(item)}>Editar</button>
+                      <button type="button" className="danger-btn" onClick={() => deleteRecord('cash', item.id, `a movimentação "${item.description}"`)}>Excluir</button>
+                    </div>
+                  </td>
                 </tr>
               ))}
-              {data.cash.length === 0 && <tr><td colSpan="4">Nenhuma movimentação registrada.</td></tr>}
+              {data.cash.length === 0 && <tr><td colSpan="5">Nenhuma movimentação registrada.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -2099,13 +2240,15 @@ function App() {
             id="new-password"
             autoComplete="new-password"
             type="password"
-            minLength={12}
             value={newPassword}
             onChange={(event) => setNewPassword(event.target.value)}
             required
           />
+          <small>A senha precisa ter pelo menos 12 caracteres.</small>
           {errorMessage && <p className="error-message" role="alert">{errorMessage}</p>}
-          <button type="submit" className="primary-btn">Salvar nova senha</button>
+          <button type="submit" className="primary-btn" disabled={isChangingPassword}>
+            {isChangingPassword ? 'Salvando senha...' : 'Salvar nova senha'}
+          </button>
         </form>
       </main>
     )
@@ -2179,10 +2322,13 @@ function App() {
             <label htmlFor="account-current-password">Senha atual</label>
             <input id="account-current-password" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required />
             <label htmlFor="account-new-password">Nova senha (mínimo 12 caracteres)</label>
-            <input id="account-new-password" type="password" autoComplete="new-password" minLength={12} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required />
+            <input id="account-new-password" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required />
+            <small>A senha precisa ter pelo menos 12 caracteres.</small>
             {errorMessage && <p className="error-message" role="alert">{errorMessage}</p>}
             <div className="topbar-actions">
-              <button type="submit" className="primary-btn">Salvar senha</button>
+              <button type="submit" className="primary-btn" disabled={isChangingPassword}>
+                {isChangingPassword ? 'Salvando senha...' : 'Salvar senha'}
+              </button>
               <button type="button" className="ghost-btn" onClick={() => { setShowPasswordForm(false); setErrorMessage('') }}>Cancelar</button>
             </div>
           </form>
