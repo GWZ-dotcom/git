@@ -4,6 +4,7 @@ import './App.css'
 const navItems = [
   { id: 'dashboard', label: 'Visão geral', icon: 'M3 3h8v8H3z M13 3h8v5h-8z M13 10h8v11h-8z M3 13h8v8H3z' },
   { id: 'ordens', label: 'Ordens de serviço', icon: 'M8 4h8 M8 8h8 M8 12h5 M5 3h14v18H5z' },
+  { id: 'historico', label: 'Histórico de OS', icon: 'M3 12a9 9 0 1 0 3-6.7 M3 3v4h4 M12 7v5l3 2' },
   { id: 'clientes', label: 'Clientes', icon: 'M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M20 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75' },
   { id: 'aparelhos', label: 'Aparelhos', icon: 'M7 2h10v20H7z M11 18h2' },
   { id: 'estoque', label: 'Estoque', icon: 'm3 7 9-4 9 4-9 4z M3 7v10l9 4 9-4V7 M12 11v10' },
@@ -12,7 +13,7 @@ const navItems = [
 ]
 
 const navGroups = [
-  { label: 'PRINCIPAL', ids: ['dashboard', 'ordens', 'clientes', 'aparelhos'] },
+  { label: 'PRINCIPAL', ids: ['dashboard', 'ordens', 'historico', 'clientes', 'aparelhos'] },
   { label: 'LOJA', ids: ['estoque', 'vendas', 'financeiro'] },
 ]
 
@@ -21,6 +22,8 @@ const pageTitles = {
   clientes: 'Clientes',
   aparelhos: 'Aparelhos',
   ordens: 'Ordens de serviço',
+  historico: 'Histórico de OS',
+  conta: 'Minha conta',
   estoque: 'Estoque',
   vendas: 'Vendas e caixa',
   financeiro: 'Financeiro',
@@ -31,6 +34,8 @@ const pageDescriptions = {
   clientes: 'Encontre e acompanhe quem confia seus aparelhos à sua assistência.',
   aparelhos: 'Consulte os aparelhos registrados e seus proprietários.',
   ordens: 'Acompanhe cada conserto do recebimento à entrega.',
+  historico: 'Consulte as ordens confirmadas como pagas e finalizadas.',
+  conta: 'Gerencie sua senha e o acesso ao aplicativo.',
   estoque: 'Peças e produtos organizados para você saber o que precisa repor.',
   vendas: 'Registre vendas e acompanhe as movimentações do caixa.',
   financeiro: 'Tenha clareza sobre receitas, despesas e resultado.',
@@ -216,7 +221,7 @@ function App() {
   const [loginConfigured, setLoginConfigured] = useState(false)
   const [password, setPassword] = useState('')
   const [mustChangePassword, setMustChangePassword] = useState(false)
-  const [showPasswordForm, setShowPasswordForm] = useState(false)
+  const [passwordChanged, setPasswordChanged] = useState(false)
   const username = 'richer'
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -247,6 +252,9 @@ function App() {
   const [adjustingInventoryId, setAdjustingInventoryId] = useState('')
   const [stockAdjustment, setStockAdjustment] = useState({ quantity: '', unitCost: '', note: '' })
   const [installPrompt, setInstallPrompt] = useState(null)
+  const [isInstalled, setIsInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true)
+  const [installMessage, setInstallMessage] = useState('')
+  const [searchOrderHistory, setSearchOrderHistory] = useState('')
   const [inventoryForm, setInventoryForm] = useState({
     code: '',
     name: '',
@@ -345,6 +353,12 @@ function App() {
     const onBeforeInstallPrompt = (event) => {
       event.preventDefault()
       setInstallPrompt(event)
+      setInstallMessage('')
+    }
+    const onAppInstalled = () => {
+      setIsInstalled(true)
+      setInstallPrompt(null)
+      setInstallMessage('Aplicativo instalado com sucesso.')
     }
 
     const registerSw = async () => {
@@ -361,12 +375,14 @@ function App() {
     }
 
     window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt)
+    window.addEventListener('appinstalled', onAppInstalled)
     registerSw().catch((error) => {
       console.error('Falha ao configurar o modo offline:', error)
     })
 
     return () => {
       window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt)
+      window.removeEventListener('appinstalled', onAppInstalled)
     }
   }, [])
 
@@ -484,6 +500,11 @@ function App() {
   const periodOrders = data.orders.filter((order) => inSelectedPeriod(order.openedAt))
   const activeOrders = data.orders.filter((order) => !order.paidAt)
   const completedOrders = data.orders.filter((order) => order.paidAt)
+  const filteredCompletedOrders = completedOrders.filter((order) => {
+    const term = searchOrderHistory.trim().toLowerCase()
+    return [order.id, order.customer, order.device, order.service]
+      .some((value) => String(value || '').toLowerCase().includes(term))
+  })
   const periodCash = data.cash.filter((entry) => inSelectedPeriod(entry.date))
   const periodSalesRevenue = periodSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0)
   const periodServiceRevenue = periodOrders
@@ -622,7 +643,7 @@ function App() {
         body: JSON.stringify({ currentPassword, newPassword }),
       })
       setMustChangePassword(false)
-      setShowPasswordForm(false)
+      setPasswordChanged(true)
       setCurrentPassword('')
       setNewPassword('')
       await reloadData()
@@ -640,6 +661,42 @@ function App() {
       setApiStatus('unauthenticated')
     } catch (error) {
       setErrorMessage(error.message)
+    }
+  }
+
+  const openAccount = () => {
+    setCurrentPassword('')
+    setNewPassword('')
+    setPasswordChanged(false)
+    setErrorMessage('')
+    setActiveTab('conta')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handleInstall = async () => {
+    if (isInstalled) {
+      openAccount()
+      return
+    }
+    if (!installPrompt) {
+      setInstallMessage('Se a instalação estiver disponível, use a opção “Instalar aplicativo” no menu do navegador. Ela pode não aparecer neste navegador ou se o aplicativo já estiver instalado.')
+      openAccount()
+      return
+    }
+    try {
+      await installPrompt.prompt()
+      const choice = await installPrompt.userChoice
+      setInstallPrompt(null)
+      if (choice.outcome === 'accepted') {
+        setInstallMessage('Instalação aceita. Siga as instruções do navegador para concluir.')
+      } else {
+        setInstallMessage('Instalação cancelada. Para tentar novamente, use a opção de instalação no menu do navegador.')
+        openAccount()
+      }
+    } catch (error) {
+      setInstallPrompt(null)
+      setInstallMessage(`Não foi possível iniciar a instalação: ${error.message}. Tente pelo menu do navegador.`)
+      openAccount()
     }
   }
 
@@ -1620,6 +1677,9 @@ function App() {
       <div className="panel">
         <div className="panel-header">
           <h3>Ordens de serviço</h3>
+          <button type="button" className="ghost-btn" onClick={() => { setActiveTab('historico'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+            Ver histórico ({completedOrders.length})
+          </button>
         </div>
         <div className="table-wrapper">
           <table>
@@ -1671,10 +1731,32 @@ function App() {
           </table>
         </div>
       </div>
+    </>
+  )
 
+  const renderHistorico = () => (
+    <>
+      <div className="history-intro">
+        <div>
+          <span className="history-kicker">REGISTROS CONCLUÍDOS</span>
+          <h2>Seus serviços finalizados, em um só lugar.</h2>
+          <p>As OS aparecem aqui após a confirmação em “Pago e finalizar”. OS apenas marcadas como entregues permanecem na lista de ordens até a confirmação do pagamento.</p>
+        </div>
+        <div className="history-count">
+          <strong>{completedOrders.length}</strong>
+          <span>{completedOrders.length === 1 ? 'OS finalizada' : 'OS finalizadas'}</span>
+        </div>
+      </div>
       <div className="panel">
         <div className="panel-header">
-          <h3>Histórico de OS finalizadas <span className="list-total">{completedOrders.length}</span></h3>
+          <h3>Histórico de OS finalizadas <span className="list-total">{filteredCompletedOrders.length}</span></h3>
+          <input
+            type="search"
+            value={searchOrderHistory}
+            onChange={(event) => setSearchOrderHistory(event.target.value)}
+            placeholder="Buscar OS, cliente, aparelho ou serviço"
+            aria-label="Buscar no histórico de ordens de serviço"
+          />
         </div>
         <div className="table-wrapper">
           <table>
@@ -1690,7 +1772,7 @@ function App() {
               </tr>
             </thead>
             <tbody>
-              {completedOrders.map((order) => (
+              {filteredCompletedOrders.map((order) => (
                 <tr key={order.id}>
                   <td>{order.id}</td>
                   <td>{order.customer}</td>
@@ -1701,8 +1783,8 @@ function App() {
                   <td><button type="button" className="ghost-btn" onClick={() => generateOrderPdf(order)}>Gerar PDF</button></td>
                 </tr>
               ))}
-              {completedOrders.length === 0 && (
-                <tr><td colSpan="7" className="empty-state">As OS confirmadas como pagas e finalizadas aparecerão aqui.</td></tr>
+              {filteredCompletedOrders.length === 0 && (
+                <tr><td colSpan="7" className="empty-state">{completedOrders.length ? 'Nenhuma OS corresponde à busca.' : 'As OS confirmadas como pagas e finalizadas aparecerão aqui.'}</td></tr>
               )}
             </tbody>
           </table>
@@ -2144,6 +2226,62 @@ function App() {
     </>
   )
 
+  const renderConta = () => (
+    <div className="account-page">
+      <section className="account-hero">
+        <div className="account-hero-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 3 4 6v5c0 5 3.2 8.3 8 10 4.8-1.7 8-5 8-10V6l-8-3Z M9 12l2 2 4-4" /></svg>
+        </div>
+        <div>
+          <span className="history-kicker">SEGURANÇA DA CONTA</span>
+          <h2>Seu acesso, protegido.</h2>
+          <p>Atualize sua senha e mantenha o Soberano sempre por perto.</p>
+        </div>
+      </section>
+
+      <div className="account-page-grid">
+        <section className="panel account-security">
+          <div className="account-section-heading">
+            <span className="account-section-icon" aria-hidden="true">✦</span>
+            <div>
+              <h3>Alterar senha</h3>
+              <p>Confirme a senha atual e escolha uma nova senha pessoal.</p>
+            </div>
+          </div>
+          <form className="account-password-form" onSubmit={handlePasswordChange}>
+            <label htmlFor="account-current-password">Senha atual</label>
+            <input id="account-current-password" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => { setCurrentPassword(event.target.value); setPasswordChanged(false) }} required />
+            <label htmlFor="account-new-password">Nova senha</label>
+            <input id="account-new-password" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => { setNewPassword(event.target.value); setPasswordChanged(false) }} required />
+            <small>Use pelo menos 12 caracteres e uma senha diferente da atual.</small>
+            {passwordChanged && <p className="account-success" role="status">Senha alterada com sucesso.</p>}
+            <button type="submit" className="primary-btn" disabled={isChangingPassword}>
+              {isChangingPassword ? 'Salvando senha...' : 'Salvar nova senha'}
+            </button>
+          </form>
+        </section>
+        <section className="panel account-install">
+          <div className="account-section-heading">
+            <span className="account-section-icon" aria-hidden="true">↓</span>
+            <div>
+              <h3>Instalar o Soberano</h3>
+              <p>Tenha acesso ao aplicativo direto pelo computador ou celular.</p>
+            </div>
+          </div>
+          {isInstalled ? (
+            <p className="account-success" role="status">Você está usando o aplicativo instalado.</p>
+          ) : (
+            <>
+              <button type="button" className="ghost-btn account-install-action" onClick={handleInstall}>Instalar aplicativo</button>
+              <p className="account-install-help">Se o botão de instalação não abrir, procure “Instalar aplicativo” ou “Adicionar à tela inicial” no menu do navegador. A disponibilidade depende do navegador e da instalação existente.</p>
+            </>
+          )}
+          {installMessage && <p className="account-install-help" role="status">{installMessage}</p>}
+        </section>
+      </div>
+    </div>
+  )
+
   const renderContent = () => {
     switch (activeTab) {
       case 'clientes':
@@ -2152,6 +2290,10 @@ function App() {
         return renderAparelhos()
       case 'ordens':
         return renderOrdens()
+      case 'historico':
+        return renderHistorico()
+      case 'conta':
+        return renderConta()
       case 'estoque':
         return renderEstoque()
       case 'vendas':
@@ -2295,15 +2437,14 @@ function App() {
             <button type="button" className="account-logout" onClick={handleLogout} aria-label="Sair do aplicativo" title="Sair">↗</button>
           </div>
           <div className="account-tools">
-            <button type="button" className="password-toggle" onClick={() => { setCurrentPassword(''); setNewPassword(''); setShowPasswordForm((current) => !current) }}>
+            <button type="button" className="password-toggle" onClick={openAccount} aria-current={activeTab === 'conta' ? 'page' : undefined}>
               Alterar senha
             </button>
           </div>
-          {installPrompt && (
-            <button type="button" className="install-btn" onClick={() => installPrompt.prompt()}>
-              Instalar PWA
-            </button>
-          )}
+          <button type="button" className="install-btn" onClick={handleInstall}>
+            <span className="install-label-full">{isInstalled ? 'Aplicativo instalado' : 'Instalar aplicativo'}</span>
+            <span className="install-label-short">{isInstalled ? 'Instalado' : 'Instalar'}</span>
+          </button>
           <small className="app-credit">Desenvolvido por Gustavo Braga</small>
         </div>
       </aside>
@@ -2315,23 +2456,6 @@ function App() {
             <span>{errorMessage}</span>
             <button type="button" className="ghost-btn" onClick={() => setErrorMessage('')} aria-label="Fechar aviso">Fechar</button>
           </div>
-        )}
-        {showPasswordForm && (
-          <form className="connection-card password-change-panel" onSubmit={handlePasswordChange}>
-            <h2>Alterar senha</h2>
-            <label htmlFor="account-current-password">Senha atual</label>
-            <input id="account-current-password" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required />
-            <label htmlFor="account-new-password">Nova senha (mínimo 12 caracteres)</label>
-            <input id="account-new-password" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required />
-            <small>A senha precisa ter pelo menos 12 caracteres.</small>
-            {errorMessage && <p className="error-message" role="alert">{errorMessage}</p>}
-            <div className="topbar-actions">
-              <button type="submit" className="primary-btn" disabled={isChangingPassword}>
-                {isChangingPassword ? 'Salvando senha...' : 'Salvar senha'}
-              </button>
-              <button type="button" className="ghost-btn" onClick={() => { setShowPasswordForm(false); setErrorMessage('') }}>Cancelar</button>
-            </div>
-          </form>
         )}
         <header className="topbar">
           <div>

@@ -16,9 +16,11 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
+  overflow-y: auto;
 }
 
 .brand-box {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -48,6 +50,9 @@
   display: flex;
   flex-direction: column;
   gap: 22px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .nav-group {
@@ -129,6 +134,7 @@
   margin-top: auto;
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   gap: 12px;
   padding-top: 14px;
   border-top: 1px solid var(--border);
@@ -224,6 +230,183 @@
 .password-toggle:hover {
   color: var(--text-strong);
   border-color: rgba(53, 216, 117, 0.32);
+}
+
+.sidebar-footer .install-btn {
+  border: 1px solid rgba(53, 216, 117, 0.24);
+  color: var(--brand-green);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.install-label-short {
+  display: none;
+}
+
+.history-intro,
+.account-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 22px;
+  padding: clamp(22px, 3vw, 36px);
+  border: 1px solid rgba(53, 216, 117, 0.22);
+  border-radius: 20px;
+  background: radial-gradient(ellipse at 85% 20%, rgba(53, 216, 117, 0.16), transparent 48%),
+    linear-gradient(115deg, var(--panel), var(--bg-secondary));
+}
+
+.history-kicker {
+  color: var(--brand-green);
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.history-intro h2,
+.account-hero h2 {
+  margin: 10px 0;
+  font-size: clamp(1.35rem, 2.5vw, 1.8rem);
+  letter-spacing: -0.035em;
+}
+
+.history-intro p,
+.account-hero p,
+.account-section-heading p,
+.account-install-help {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.87rem;
+  line-height: 1.6;
+}
+
+.history-intro p {
+  max-width: 700px;
+}
+
+.history-count {
+  display: grid;
+  min-width: 135px;
+  gap: 5px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(10, 13, 11, 0.35);
+  text-align: center;
+}
+
+.history-count strong {
+  color: var(--brand-green);
+  font-size: 2rem;
+}
+
+.history-count span {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.account-hero {
+  justify-content: flex-start;
+}
+
+.account-hero-icon,
+.account-section-icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  border: 1px solid rgba(53, 216, 117, 0.24);
+  border-radius: 16px;
+  background: rgba(53, 216, 117, 0.1);
+  color: var(--brand-green);
+}
+
+.account-hero-icon {
+  width: 70px;
+  height: 70px;
+}
+
+.account-hero-icon svg {
+  width: 34px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.account-page-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.account-section-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.account-section-heading h3 {
+  margin: 0 0 6px;
+}
+
+.account-section-icon {
+  width: 42px;
+  height: 42px;
+  font-size: 1.3rem;
+}
+
+.account-password-form {
+  display: grid;
+  gap: 10px;
+}
+
+.account-password-form label {
+  margin-top: 6px;
+  font-size: 0.83rem;
+  font-weight: 700;
+}
+
+.account-password-form input {
+  width: 100%;
+  min-height: 46px;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  color: var(--text-strong);
+}
+
+.account-password-form input:focus {
+  outline: 2px solid rgba(53, 216, 117, 0.6);
+  outline-offset: 1px;
+}
+
+.account-password-form small {
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.account-password-form .primary-btn {
+  justify-self: start;
+  margin-top: 12px;
+}
+
+.account-success {
+  margin: 4px 0;
+  color: var(--brand-green);
+  font-size: 0.85rem;
+}
+
+.account-install-action {
+  margin-bottom: 16px;
+}
+
+.account-install-help + .account-install-help {
+  margin-top: 12px;
 }
 
 .install-btn,
@@ -1564,12 +1747,15 @@ textarea {
     width: 100%;
     min-width: 0;
     height: auto;
-    position: relative;
+    position: sticky;
+    top: 0;
+    z-index: 30;
     flex: 0 0 auto;
     border-right: none;
     border-bottom: 1px solid var(--border);
     padding: 10px 16px;
     gap: 8px;
+    overflow: visible;
   }
 
   .nav-menu {
@@ -1578,6 +1764,7 @@ textarea {
     min-width: 0;
     gap: 16px;
     overflow-x: auto;
+    overflow-y: hidden;
     padding: 4px 0 8px;
   }
 
@@ -1643,10 +1830,6 @@ textarea {
   .app-credit {
     flex: 0 1 auto;
     padding-top: 2px;
-  }
-
-  .sidebar-footer .install-btn {
-    display: none;
   }
 
   .nav-group-label {
@@ -1759,7 +1942,7 @@ textarea {
 
   .brand-box {
     grid-column: 1;
-    width: min(145px, 40vw);
+    width: min(120px, 30vw);
   }
 
   .nav-menu {
@@ -1796,7 +1979,7 @@ textarea {
     grid-column: 2;
     grid-row: 1;
     min-width: 0;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     justify-content: flex-end;
     gap: 6px;
     padding: 0;
@@ -1808,15 +1991,18 @@ textarea {
     padding: 0;
   }
 
+  .account-avatar,
   .account-copy,
   .app-credit {
     display: none;
   }
 
-  .account-avatar {
-    width: 32px;
-    height: 32px;
-    flex-basis: 32px;
+  .install-label-full {
+    display: none;
+  }
+
+  .install-label-short {
+    display: inline;
   }
 
   .account-logout {
@@ -1839,6 +2025,33 @@ textarea {
   .main-panel {
     width: 100%;
     padding: 18px 14px calc(24px + env(safe-area-inset-bottom));
+  }
+
+  .history-intro {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .history-count {
+    min-width: 0;
+    text-align: left;
+  }
+
+  .account-page-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-hero {
+    align-items: flex-start;
+  }
+
+  .account-hero-icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .account-hero-icon svg {
+    width: 26px;
   }
 
   .topbar {
