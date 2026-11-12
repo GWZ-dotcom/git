@@ -48,6 +48,13 @@ const statusOptions = [
   'Cancelado',
 ]
 
+const whatsappUpdateStatuses = [
+  'Aguardando aprovação do orçamento',
+  'Aguardando peças',
+  'Em manutenção',
+  'Pronto para retirada',
+]
+
 const emptyData = {
   clients: [],
   devices: [],
@@ -73,13 +80,18 @@ const currency = new Intl.NumberFormat('pt-BR', {
   currency: 'BRL',
 })
 
-function getReadyWhatsAppUrl(order) {
+function getOrderWhatsAppUrl(order) {
   const phone = String(order.phone || '').replace(/\D/g, '')
   if (!phone) return ''
   const internationalPhone = phone.startsWith('55') ? phone : `55${phone}`
   if (internationalPhone.length < 12 || internationalPhone.length > 13) return ''
   const workDetails = order.workReport ? `\nO que foi feito: ${order.workReport}` : ''
-  const message = `Olá, ${order.customer}! O serviço do seu aparelho ${order.device} foi concluído e está pronto para retirada na Soberano Assistência Técnica.\nOS ${order.id}.\nServiço: ${order.service}${workDetails}\nValor: ${currency.format(Number(order.total) || 0)}`
+  const readyForPickup = order.status === 'Pronto para retirada'
+  const introduction = readyForPickup
+    ? `O serviço do seu aparelho ${order.device} foi concluído e está pronto para retirada na Soberano Assistência Técnica.`
+    : `Temos uma atualização sobre o conserto do seu aparelho ${order.device} na Soberano Assistência Técnica.`
+  const progress = readyForPickup ? '' : `\nEtapa atual: ${order.status}.`
+  const message = `Olá, ${order.customer}! ${introduction}\nOS ${order.id}.${progress}\nServiço: ${order.service}${workDetails}\nValor: ${currency.format(Number(order.total) || 0)}`
   return `https://wa.me/${internationalPhone}?text=${encodeURIComponent(message)}`
 }
 
@@ -728,14 +740,10 @@ function App() {
       eta: existingOrder?.eta || '',
       warranty: existingOrder?.warranty || '',
     }
-    const readyNotification = record.status === 'Pronto para retirada' && existingOrder?.status !== 'Pronto para retirada'
-      ? startReadyNotification(record)
-      : null
     const saved = editingOrderId
       ? await updateRecord('orders', editingOrderId, record)
       : await saveRecord('orders', record)
     if (saved) {
-      if (readyNotification) finishReadyNotification(readyNotification)
       setOrderForm({ customer: '', phone: '', device: '', imei: '', service: '', workReport: '', status: 'Recebido', total: '' })
       setSelectedOrderClientId('')
       setSelectedOrderDeviceId('')
@@ -925,38 +933,14 @@ function App() {
     }
   }
 
-  const startReadyNotification = (order) => {
-    const url = getReadyWhatsAppUrl(order)
-    if (!url) return { url, popup: null }
-    return { url, popup: window.open('about:blank', '_blank') }
-  }
-
-  const finishReadyNotification = ({ url, popup }) => {
-    if (!url) {
-      setErrorMessage('OS pronta, mas falta um telefone válido no cadastro do cliente para abrir o WhatsApp.')
-      return
-    }
-    if (popup) {
-      popup.location.href = url
-      return
-    }
-    setErrorMessage('OS pronta. O navegador bloqueou a nova janela; use “Avisar WhatsApp” na lista de ordens.')
-  }
-
   const updateOrderStatus = async (orderId, nextStatus) => {
-    const order = data.orders.find((entry) => entry.id === orderId)
-    const readyNotification = order && nextStatus === 'Pronto para retirada' && order.status !== 'Pronto para retirada'
-      ? startReadyNotification(order)
-      : null
     try {
       await requestApi(`/orders/${encodeURIComponent(orderId)}`, {
         method: 'PATCH',
         body: JSON.stringify({ status: nextStatus }),
       })
       await reloadData()
-      if (readyNotification) finishReadyNotification(readyNotification)
     } catch (error) {
-      readyNotification?.popup?.close()
       setErrorMessage(error.message)
       setApiStatus('disconnected')
     }
@@ -1607,8 +1591,10 @@ function App() {
                     <div className="record-actions compact">
                       <button type="button" className="ghost-btn" onClick={() => generateOrderPdf(order)}>Gerar PDF</button>
                       <button type="button" className="ghost-btn" onClick={() => beginOrderEdit(order)}>Editar</button>
-                      {order.status === 'Pronto para retirada' && getReadyWhatsAppUrl(order) && (
-                        <a className="whatsapp-btn" href={getReadyWhatsAppUrl(order)} target="_blank" rel="noreferrer">Avisar WhatsApp</a>
+                      {whatsappUpdateStatuses.includes(order.status) && getOrderWhatsAppUrl(order) && (
+                        <a className="whatsapp-btn" href={getOrderWhatsAppUrl(order)} target="_blank" rel="noreferrer">
+                          Avisar cliente
+                        </a>
                       )}
                       <button type="button" className="danger-btn" onClick={() => deleteRecord('orders', order.id, `a ordem ${order.id}`)}>Excluir</button>
                     </div>
